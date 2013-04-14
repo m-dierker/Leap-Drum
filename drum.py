@@ -10,18 +10,25 @@ pointer_radius = 4
 x_range = 200
 screen_size = (10, 10)
 vel_tracker = {}
-frame_count = 5
+required_frame_count = 5
 
-class LeapListener(Leap.Listener):
+class DrumListener(Leap.Listener):
 
     def on_connect(self, controller):
         print "Connected to Leap"
 
-        self.snare = Sound('snare.wav')
-        self.kick = Sound('kick.wav')
+        self.drums = []
+        self.drums.append(Sound('snare.wav'))
+        self.drums.append(Sound('kick.wav'))
+
+
+        self.last_drum_hit = []
+        for x in xrange(len(self.drums)):
+            self.last_drum_hit.append(0)
+
 
     def on_frame(self, controller):
-        global pointer_radius, x_range, frame_count
+        global pointer_radius, x_range, required_frame_count
 
         frame = controller.frame()
 
@@ -31,25 +38,42 @@ class LeapListener(Leap.Listener):
             id = hand.id
 
             if vel.z < -350:
+                # Moving forward at a certina speed
                 print vel
+
+                # See if we're tracking the current hand
                 if not id in vel_tracker:
                     vel_tracker[id] = []
-                if id in vel_tracker:
-                    count = len(vel_tracker[id])
-                    if count < frame_count:
-                        vel_tracker[id].append((vel, pos, time()))
+
+                count = len(vel_tracker[id])
+
+                # Clear any old frames
+                if count >= 1:
+                    first_time = vel_tracker[id][0][2]
+                    # 100ms difference is too much
+                    if time() - first_time > .8:
+                        print "Clearing ID " + str(id)
+                        del vel_tracker[id]
+                        vel_tracker[id] = []
+
+                # Add in the frame
+                if count < required_frame_count:
+                    vel_tracker[id].append((vel, pos, time()))
+                else:
+                    # We have enough frames and we know they're valid
+                    vel_tracker[id] = []
+
+                    # Play the appropriate drum in the array
+                    drum_x = pos.x + 500
+                    drum_x  = drum_x / 1000.0 * len(self.drums)
+                    drum_x = int(drum_x)
+
+                    # Make sure we aren't playing too fast
+                    if time() - self.last_drum_hit[drum_x] < .25:
+                        print "Playing too fast on ID " + str(id)
                     else:
-                        vel_copy = vel_tracker[id][:]
-                        for (vel, pos, trigger_time) in vel_copy:
-                            if time() - trigger_time >= 100:
-                                vel_tracker[id].remove((vel, pos, trigger_time))
-                        if len(vel_tracker[id]) >= frame_count:
-                            last_vel = vel_tracker[id][-1:][0][0]
-                            vel_tracker[id] = []
-                            if pos.x < 0:
-                                self.snare.play()
-                            else:
-                                self.kick.play()
+                        self.drums[drum_x].play()
+                        self.last_drum_hit[drum_x] = time()
 
 
 def main():
@@ -61,7 +85,7 @@ def main():
     pygame.display.set_caption('Leap Drawing')
 
     leap_controller = Leap.Controller()
-    listener = LeapListener()
+    listener = DrumListener()
 
     leap_controller.add_listener(listener)
 
