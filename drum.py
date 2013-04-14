@@ -1,16 +1,9 @@
-import pygame
-from pygame.locals import *
-import pygame.gfxdraw
 import leap.Leap as Leap
 from time import time, sleep
-import pygame.mixer
-from pygame.mixer import Sound
+import subprocess
 
-pointer_radius = 4
-x_range = 200
-screen_size = (10, 10)
 vel_tracker = {}
-required_frame_count = 5
+required_frame_count = 2
 
 class DrumListener(Leap.Listener):
 
@@ -18,13 +11,15 @@ class DrumListener(Leap.Listener):
         print "Connected to Leap"
 
         self.drums = []
-        self.drums.append(Sound('snare.wav'))
-        self.drums.append(Sound('kick.wav'))
+        self.drums.append('snare.wav')
+        self.drums.append('kick.wav')
 
 
         self.last_drum_hit = []
         for x in xrange(len(self.drums)):
             self.last_drum_hit.append(0)
+
+        self.ready_to_play = {}
 
 
     def on_frame(self, controller):
@@ -37,9 +32,9 @@ class DrumListener(Leap.Listener):
             vel = hand.palm_velocity
             id = hand.id
 
-            if vel.z < -350:
-                # Moving forward at a certina speed
-                print vel
+            if vel.z < -350 and not id in self.ready_to_play:
+                # Moving forward at a certain speed
+                # print vel
 
                 # See if we're tracking the current hand
                 if not id in vel_tracker:
@@ -47,10 +42,12 @@ class DrumListener(Leap.Listener):
 
                 count = len(vel_tracker[id])
 
+                print str(count) + " for ID " + str(id)
+
                 # Clear any old frames
                 if count >= 1:
                     first_time = vel_tracker[id][0][2]
-                    # 100ms difference is too much
+                    # See if the difference is too much so we don't keep old frames around
                     if time() - first_time > .8:
                         print "Clearing ID " + str(id)
                         del vel_tracker[id]
@@ -68,21 +65,24 @@ class DrumListener(Leap.Listener):
                     drum_x  = drum_x / 1000.0 * len(self.drums)
                     drum_x = int(drum_x)
 
-                    # Make sure we aren't playing too fast
-                    if time() - self.last_drum_hit[drum_x] < .25:
-                        print "Playing too fast on ID " + str(id)
-                    else:
-                        self.drums[drum_x].play()
-                        self.last_drum_hit[drum_x] = time()
+                    self.ready_to_play[id] = drum_x
+            # We might be moving backwards, so we should hit the drum
+            elif vel.z > -100 and id in self.ready_to_play:
+                drum_x = self.ready_to_play[id]
+                # Make sure we aren't playing too fast
+                if time() - self.last_drum_hit[drum_x] < .05:
+                    print "Playing too fast on ID " + str(id)
+                else:
+                    print "hit"
+                    subprocess.Popen(["afplay", self.drums[drum_x]])
+                    self.last_drum_hit[drum_x] = time()
+
+                del self.ready_to_play[id]
+
 
 
 def main():
     global screen_size
-    # Pygame init
-    pygame.init()
-    pygame.mixer.init()
-    pygame.display.set_mode(screen_size)
-    pygame.display.set_caption('Leap Drawing')
 
     leap_controller = Leap.Controller()
     listener = DrumListener()
@@ -94,15 +94,10 @@ def main():
 
     finished = False
     while not finished:
-        for event in pygame.event.get():
-            if event.type == QUIT:
-                finished = True
-
-        # renderer.render()
-        pygame.time.wait(10)
-        # time.sleep(.015)
+        sleep(.1)
 
     leap_controller.remove_listener(listener)
 
 if __name__ == '__main__':
     main()
+
